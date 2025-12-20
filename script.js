@@ -673,14 +673,8 @@ function loadApiKey() {
 async function generatePlan() {
     const aiInputEl = $('aiInputText');
     const outputEl = $('inputText');
-    const apiKey = $('apiKey').value.trim();
+    const userApiKey = $('apiKey').value.trim();
     const btn = document.querySelector('.generate-btn');
-
-    if (!apiKey) {
-        alert('⚠️ الرجاء إدخال مفتاح API أولاً (اضغط على علامة الترس)');
-        toggleSettings();
-        return;
-    }
 
     if (!aiInputEl.value.trim()) {
         alert('⚠️ الرجاء إدخال بيانات العميل');
@@ -700,39 +694,65 @@ async function generatePlan() {
         const fullPrompt = SYSTEM_PROMPT + "\n\n🚀 CLIENT DATA:\n" + userContent;
         let generatedText = "";
 
-        // Google Gemini API
-        const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-2.0-flash'];
-        let data = null;
-        let success = false;
-        let lastError = null;
+        // Try Server API first (uses GEMINI_API_KEY from environment)
+        try {
+            const serverResponse = await fetch('/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: fullPrompt })
+            });
 
-        for (const model of models) {
-            try {
-                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }] })
-                });
+            const serverData = await serverResponse.json();
 
-                data = await response.json();
-                if (data.error) {
-                    if (data.error.code === 429 || data.error.status === 'RESOURCE_EXHAUSTED') {
-                        throw new Error(`⚠️ ضغط كبير على السيرفر. يرجى الانتظار دقيقة.`);
-                    }
-                    throw new Error(data.error.message);
-                }
-                success = true;
-                break;
-            } catch (err) {
-                if (err.message.includes('ضغط كبير')) throw err;
-                console.warn(`Model ${model} failed:`, err);
-                lastError = err;
+            if (serverResponse.ok && serverData.text) {
+                generatedText = serverData.text;
+            } else {
+                throw new Error(serverData.error || 'Server API failed');
             }
+        } catch (serverErr) {
+            console.warn('Server API failed, trying user key:', serverErr.message);
+
+            // Fallback to user's API key if provided
+            if (!userApiKey) {
+                throw new Error('الخادم غير متاح. يرجى إدخال API Key الخاص بك في الإعدادات ⚙️');
+            }
+
+            // Direct Gemini API call with user key
+            const models = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest', 'gemini-2.0-flash'];
+            let data = null;
+            let success = false;
+            let lastError = null;
+
+            for (const model of models) {
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${userApiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }] })
+                    });
+
+                    data = await response.json();
+                    if (data.error) {
+                        if (data.error.code === 429 || data.error.status === 'RESOURCE_EXHAUSTED') {
+                            throw new Error(`⚠️ ضغط كبير على السيرفر. يرجى الانتظار دقيقة.`);
+                        }
+                        throw new Error(data.error.message);
+                    }
+                    success = true;
+                    break;
+                } catch (err) {
+                    if (err.message.includes('ضغط كبير')) throw err;
+                    console.warn(`Model ${model} failed:`, err);
+                    lastError = err;
+                }
+            }
+
+            if (!success) throw lastError || new Error('All models failed.');
+            generatedText = data.candidates[0].content.parts[0].text;
         }
 
-        if (!success) throw lastError || new Error('All models failed.');
-        generatedText = data.candidates[0].content.parts[0].text;
-
+        // حفظ المحتوى في الـ mode الحالي
+        modeContent[currentCoachMode] = generatedText;
         outputEl.value = generatedText;
         render();
 
