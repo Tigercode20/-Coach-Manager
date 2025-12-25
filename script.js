@@ -192,8 +192,23 @@ function parseWorkoutPlan(text) {
     let currentSection = null;
     let currentDay = null;
 
+    // خريطة تحويل الأرقام العربية المكتوبة إلى أرقام
+    const arabicNumbers = {
+        'الأول': '1', 'الاول': '1',
+        'الثاني': '2', 'الثانى': '2',
+        'الثالث': '3',
+        'الرابع': '4',
+        'الخامس': '5',
+        'السادس': '6',
+        'السابع': '7',
+        'الثامن': '8',
+        'التاسع': '9',
+        'العاشر': '10'
+    };
+
     const promoPattern = /1️⃣|2️⃣|3️⃣|🗓️/g;
-    const dayPattern = /^(?:Day|اليوم)[\s\-_]*(\d+)(?:[\s:\-–\.]+(.*))?$/i;
+    // Pattern يدعم الأرقام العادية والكلمات العربية
+    const dayPattern = /^(?:Day|اليوم)[\s\-_]*(\d+|الأول|الاول|الثاني|الثانى|الثالث|الرابع|الخامس|السادس|السابع|الثامن|التاسع|العاشر)(?:[\s:\-–\.،]+(.*))?$/i;
     const statsPattern = /(\d+\s*(?:Sets|Sets|x|×).*)/i;
 
     for (let i = 0; i < lines.length; i++) {
@@ -220,7 +235,11 @@ function parseWorkoutPlan(text) {
         const dayMatch = line.match(dayPattern);
         if (dayMatch) {
             currentSection = 'days';
-            const dayNum = dayMatch[1];
+            let dayNum = dayMatch[1];
+            // تحويل الكلمات العربية إلى أرقام إن وجدت
+            if (arabicNumbers[dayNum]) {
+                dayNum = arabicNumbers[dayNum];
+            }
             const dayFocus = dayMatch[2] ? dayMatch[2].trim() : '';
             currentDay = { id: `Day ${dayNum}`, focus: dayFocus, exercises: [] };
             result.days.push(currentDay);
