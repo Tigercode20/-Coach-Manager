@@ -114,6 +114,9 @@ function switchCoachMode(mode) {
     if (modeContent[mode].trim()) {
         render();
     }
+
+    // تحديث ملف PDF الرئيسي عند التبديل
+    checkMasterFile();
 }
 
 /* =========================================================
