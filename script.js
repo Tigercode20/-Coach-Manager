@@ -592,7 +592,7 @@ async function mergeAndDownload() {
     msgEl.style.color = '#ffcc00';
 
     try {
-        const { PDFDocument } = PDFLib;
+        const { PDFDocument, PDFName, PDFArray, PDFString } = PDFLib;
         const pdfDoc = await PDFDocument.load(masterPdfBytes);
         const insertAfterPage = parseInt($('insertPage').value) || 5;
 
@@ -601,6 +601,29 @@ async function mergeAndDownload() {
         const bgDataUrl = (typeof BG_DATA !== 'undefined') ? BG_DATA : null;
 
         async function renderPageToPdf(pageEl, insertIndex) {
+            // جمع روابط التمارين قبل التحويل
+            const exerciseLinks = [];
+            const linkElements = pageEl.querySelectorAll('a.ex-link');
+
+            linkElements.forEach(linkEl => {
+                const rect = linkEl.getBoundingClientRect();
+                const pageRect = pageEl.getBoundingClientRect();
+
+                // حساب الموقع النسبي داخل الصفحة
+                const relativeX = rect.left - pageRect.left;
+                const relativeY = rect.top - pageRect.top;
+                const width = rect.width;
+                const height = rect.height;
+
+                exerciseLinks.push({
+                    url: linkEl.href,
+                    x: relativeX,
+                    y: relativeY,
+                    width: width,
+                    height: height
+                });
+            });
+
             if (bgDataUrl) pageEl.style.setProperty('background-image', `url("${bgDataUrl}")`, 'important');
             const canvas = await html2canvas(pageEl, { scale: 2, useCORS: true, allowTaint: true, backgroundColor: null });
             const imgData = canvas.toDataURL('image/jpeg', 0.85);
@@ -609,6 +632,34 @@ async function mergeAndDownload() {
 
             const newPage = pdfDoc.insertPage(insertIndex, [A4_WIDTH, A4_HEIGHT]);
             newPage.drawImage(imgImage, { x: 0, y: 0, width: A4_WIDTH, height: A4_HEIGHT });
+
+            // إضافة روابط قابلة للنقر في PDF
+            exerciseLinks.forEach(link => {
+                // تحويل إحداثيات HTML إلى إحداثيات PDF
+                // HTML: top-left origin, PDF: bottom-left origin
+                const pdfX = (link.x / pageEl.offsetWidth) * A4_WIDTH;
+                const pdfY = A4_HEIGHT - ((link.y + link.height) / pageEl.offsetHeight) * A4_HEIGHT;
+                const pdfWidth = (link.width / pageEl.offsetWidth) * A4_WIDTH;
+                const pdfHeight = (link.height / pageEl.offsetHeight) * A4_HEIGHT;
+
+                newPage.node.set(PDFName.of('Annots'),
+                    newPage.node.get(PDFName.of('Annots')) || pdfDoc.context.obj([]));
+
+                const annots = newPage.node.lookup(PDFName.of('Annots'), PDFArray);
+
+                const linkAnnotation = pdfDoc.context.obj({
+                    Type: 'Annot',
+                    Subtype: 'Link',
+                    Rect: [pdfX, pdfY, pdfX + pdfWidth, pdfY + pdfHeight],
+                    Border: [0, 0, 0],
+                    A: {
+                        S: 'URI',
+                        URI: PDFString.of(link.url)
+                    }
+                });
+
+                annots.push(linkAnnotation);
+            });
         }
 
         let processedCount = 0;
